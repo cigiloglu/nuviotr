@@ -1,876 +1,600 @@
-/**
- * CinemaCity - MoOnCrOwN Edition
- * Nuvio Provider
- * TMDB ID -> CinemaCity -> Stream
- */
-
-var __defProp = Object.defineProperty;
-var __defProps = Object.defineProperties;
-var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
-var __getOwnPropSymbols = Object.getOwnPropertySymbols;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __propIsEnum = Object.prototype.propertyIsEnumerable;
-
-var __defNormalProp = (obj, key, value) =>
-  key in obj
-    ? __defProp(obj, key, {
-        enumerable: true,
-        configurable: true,
-        writable: true,
-        value
-      })
-    : (obj[key] = value);
-
-var __spreadValues = (a, b) => {
-  for (var prop in b || (b = {})) {
-    if (__hasOwnProp.call(b, prop)) {
-      __defNormalProp(a, prop, b[prop]);
-    }
-  }
-
-  if (__getOwnPropSymbols) {
-    for (var prop of __getOwnPropSymbols(b)) {
-      if (__propIsEnum.call(b, prop)) {
-        __defNormalProp(a, prop, b[prop]);
-      }
-    }
-  }
-
-  return a;
-};
-
-var __spreadProps = (a, b) =>
-  __defProps(a, __getOwnPropDescs(b));
-
-var __async = (__this, __arguments, generator) => {
-  return new Promise((resolve, reject) => {
-    var fulfilled = (value) => {
-      try {
-        step(generator.next(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-
-    var rejected = (value) => {
-      try {
-        step(generator.throw(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-
-    var step = (x) => {
-      if (x.done) {
-        resolve(x.value);
-      } else {
-        Promise.resolve(x.value).then(fulfilled, rejected);
-      }
-    };
-
-    step(
-      (generator = generator.apply(__this, __arguments)).next()
-    );
-  });
-};
-
-/* Nuvio HTML parser */
 const cheerio = require("cheerio-without-node-native");
 
-/* CinemaCity */
 const MAIN_URL = "https://cinemacity.cc";
 
-/* TMDB */
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 
-/* HTTP headers */
 const HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
   "Referer": MAIN_URL + "/"
 };
 
-/* Base64 decoder */
-const atobPolyfill = (str) => {
-  try {
-    const chars =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
-
-    let output = "";
-
-    str = String(str).replace(/[=]+$/, "");
-
-    if (str.length % 4 === 1) {
-      return "";
-    }
-
-    for (
-      let bc = 0, bs = 0, buffer, i = 0;
-      (buffer = str.charAt(i++));
-      ~buffer &&
-      (bs = bc % 4
-        ? bs * 64 + buffer
-        : buffer,
-      bc++ % 4)
-        ? (output += String.fromCharCode(
-            255 & (bs >> (-2 * bc & 6))
-          ))
-        : 0
-    ) {
-      buffer = chars.indexOf(buffer);
-    }
-
-    return output;
-  } catch (e) {
-    return "";
-  }
-};
-
-/* Quality */
 function extractQuality(url) {
-  const low = (url || "").toLowerCase();
+  var low = String(url || "").toLowerCase();
 
-  if (
-    low.includes("2160p") ||
-    low.includes("4k")
-  ) {
+  if (low.indexOf("2160p") !== -1 || low.indexOf("4k") !== -1) {
     return "4K";
   }
 
-  if (low.includes("1080p")) {
+  if (low.indexOf("1080p") !== -1) {
     return "1080p";
   }
 
-  if (low.includes("720p")) {
+  if (low.indexOf("720p") !== -1) {
     return "720p";
   }
 
-  if (low.includes("480p")) {
+  if (low.indexOf("480p") !== -1) {
     return "480p";
   }
 
   return "HD";
 }
 
-/* Normalize title */
 function normalizeTitle(title) {
   return String(title || "")
     .toLowerCase()
     .replace(/\([^)]*\)/g, "")
     .replace(/\[[^\]]*\]/g, "")
-    .replace(/[^\w\sğüşöçıİĞÜŞÖÇ-]/g, " ")
+    .replace(/[^a-z0-9ğüşöçıİĞÜŞÖÇ\s-]/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-/* Search CinemaCity */
-function findMediaInHtml(html, targetTitle) {
-  try {
-    const $ = cheerio.load(html);
-
-    const normalizedTarget = normalizeTitle(targetTitle);
-
-    let found = null;
-
-    $("div.dar-short_item").each((i, el) => {
-      if (found) {
-        return;
-      }
-
-      const anchor = $(el)
-        .find("a")
-        .filter((idx, a) =>
-          ($(a).attr("href") || "").includes(".html")
-        )
-        .first();
-
-      if (!anchor.length) {
-        return;
-      }
-
-      const href = anchor.attr("href");
-
-      const rawTitle = anchor
-        .text()
-        .split("(")[0]
-        .trim();
-
-      const normalizedFound = normalizeTitle(rawTitle);
-
-      if (
-        normalizedFound === normalizedTarget ||
-        normalizedFound.includes(normalizedTarget) ||
-        normalizedTarget.includes(normalizedFound)
-      ) {
-        found = href;
-      }
-    });
-
-    return found;
-  } catch (error) {
-    console.log(
-      "[CinemaCity] Search parse error:",
-      error && error.message
-        ? error.message
-        : String(error)
-    );
-
-    return null;
-  }
-}
-
-/* Convert relative URL */
-function makeAbsoluteUrl(url) {
+function absoluteUrl(url) {
   if (!url) {
-    return null;
+    return "";
   }
 
-  if (url.startsWith("http://")) {
+  url = String(url).trim();
+
+  if (url.indexOf("http://") === 0) {
     return url;
   }
 
-  if (url.startsWith("https://")) {
+  if (url.indexOf("https://") === 0) {
     return url;
   }
 
-  if (url.startsWith("//")) {
+  if (url.indexOf("//") === 0) {
     return "https:" + url;
   }
 
-  if (url.startsWith("/")) {
+  if (url.indexOf("/") === 0) {
     return MAIN_URL + url;
   }
 
   return MAIN_URL + "/" + url;
 }
 
-/* Main provider */
-async function getStreams(
-  tmdbId,
-  mediaType,
-  season,
-  episode
-) {
-  console.log(
-    "[CinemaCity] Request:",
-    mediaType,
-    tmdbId,
-    season,
-    episode
-  );
-
+function findMedia(html, title) {
   try {
-    if (!tmdbId) {
-      console.log("[CinemaCity] TMDB ID yok");
-      return [];
-    }
+    var $ = cheerio.load(html);
 
-    if (
-      mediaType !== "movie" &&
-      mediaType !== "tv"
-    ) {
-      console.log(
-        "[CinemaCity] Desteklenmeyen medya tipi:",
-        mediaType
-      );
+    var target = normalizeTitle(title);
+    var result = null;
 
-      return [];
-    }
-
-    /*
-     * 1. TMDB bilgisi
-     */
-    const tmdbEndpoint =
-      mediaType === "tv"
-        ? "tv"
-        : "movie";
-
-    const tmdbUrl =
-      "https://api.themoviedb.org/3/" +
-      tmdbEndpoint +
-      "/" +
-      encodeURIComponent(tmdbId) +
-      "?api_key=" +
-      encodeURIComponent(TMDB_API_KEY);
-
-    const tmdbRes = await fetch(tmdbUrl);
-
-    if (!tmdbRes.ok) {
-      console.log(
-        "[CinemaCity] TMDB HTTP:",
-        tmdbRes.status
-      );
-
-      return [];
-    }
-
-    const mediaInfo = await tmdbRes.json();
-
-    const mediaTitle =
-      mediaInfo.title ||
-      mediaInfo.name;
-
-    if (!mediaTitle) {
-      console.log(
-        "[CinemaCity] TMDB title bulunamadı"
-      );
-
-      return [];
-    }
-
-    console.log(
-      "[CinemaCity] TMDB title:",
-      mediaTitle
-    );
-
-    /*
-     * 2. CinemaCity araması
-     */
-    const searchUrl =
-      MAIN_URL +
-      "/index.php?do=search&subaction=search&story=" +
-      encodeURIComponent(mediaTitle);
-
-    console.log(
-      "[CinemaCity] Search:",
-      searchUrl
-    );
-
-    const searchRes = await fetch(
-      searchUrl,
-      {
-        headers: HEADERS
+    $("div.dar-short_item").each(function (i, el) {
+      if (result) {
+        return;
       }
-    );
 
-    if (!searchRes.ok) {
-      console.log(
-        "[CinemaCity] Search HTTP:",
-        searchRes.status
-      );
+      var anchor = $(el)
+        .find("a")
+        .filter(function (idx, a) {
+          var href = $(a).attr("href") || "";
+          return href.indexOf(".html") !== -1;
+        })
+        .first();
 
-      return [];
-    }
+      if (!anchor.length) {
+        return;
+      }
 
-    const searchHtml =
-      await searchRes.text();
+      var foundTitle = anchor.text().split("(")[0].trim();
+      var normalizedFound = normalizeTitle(foundTitle);
 
-    let mediaUrl = findMediaInHtml(
-      searchHtml,
-      mediaTitle
-    );
+      if (
+        normalizedFound === target ||
+        normalizedFound.indexOf(target) !== -1 ||
+        target.indexOf(normalizedFound) !== -1
+      ) {
+        result = anchor.attr("href");
+      }
+    });
 
-    /*
-     * 3. Aramada bulunamazsa ana sayfayı dene
-     */
-    if (!mediaUrl) {
-      console.log(
-        "[CinemaCity] Search sonucu yok, ana sayfa deneniyor"
-      );
+    return result;
+  } catch (e) {
+    console.log("[CinemaCity] search parse error:", String(e));
+    return null;
+  }
+}
 
-      const homeRes = await fetch(
-        MAIN_URL,
-        {
-          headers: HEADERS
-        }
-      );
+function decodeBase64(input) {
+  try {
+    var chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 
-      if (homeRes.ok) {
-        const homeHtml =
-          await homeRes.text();
+    var str = String(input).replace(/=+$/, "");
 
-        mediaUrl = findMediaInHtml(
-          homeHtml,
-          mediaTitle
+    var output = "";
+    var bc = 0;
+    var bs = 0;
+    var buffer;
+    var i = 0;
+
+    while ((buffer = str.charAt(i++))) {
+      buffer = chars.indexOf(buffer);
+
+      if (buffer < 0) {
+        continue;
+      }
+
+      bs = bc % 4 ? bs * 64 + buffer : buffer;
+
+      if (bc++ % 4) {
+        output += String.fromCharCode(
+          255 & (bs >> (-2 * bc & 6))
         );
       }
     }
 
-    if (!mediaUrl) {
-      console.log(
-        "[CinemaCity] İçerik bulunamadı:",
-        mediaTitle
-      );
+    return output;
+  } catch (e) {
+    return "";
+  }
+}
 
-      return [];
-    }
+function extractFileData(html) {
+  try {
+    var $ = cheerio.load(html);
+    var fileData = null;
 
-    mediaUrl =
-      makeAbsoluteUrl(mediaUrl);
-
-    console.log(
-      "[CinemaCity] Content URL:",
-      mediaUrl
-    );
-
-    /*
-     * 4. İçerik sayfası
-     */
-    const pageRes = await fetch(
-      mediaUrl,
-      {
-        headers: __spreadProps(
-          __spreadValues({}, HEADERS),
-          {
-            Referer:
-              MAIN_URL + "/"
-          }
-        )
+    $("script").each(function (i, el) {
+      if (fileData) {
+        return;
       }
-    );
 
-    if (!pageRes.ok) {
-      console.log(
-        "[CinemaCity] Content HTTP:",
-        pageRes.status
-      );
+      var script = $(el).html();
 
-      return [];
-    }
+      if (!script || script.indexOf("atob") === -1) {
+        return;
+      }
 
-    const pageHtml =
-      await pageRes.text();
+      var regex = /atob\s*\(\s*(['"])(.*?)\1\s*\)/g;
+      var match;
 
-    const $page =
-      cheerio.load(pageHtml);
+      while ((match = regex.exec(script)) !== null) {
+        var decoded = decodeBase64(match[2]);
 
-    let fileData = null;
-
-    /*
-     * 5. Base64 / atob içinden file bul
-     */
-    $page("script").each(
-      (i, el) => {
-        if (fileData) {
-          return;
+        if (!decoded) {
+          continue;
         }
 
-        const scriptHtml =
-          $page(el).html();
+        var fileMatch =
+          decoded.match(/file\s*:\s*(['"])(.*?)\1/s) ||
+          decoded.match(/file\s*:\s*(\[.*?\])/s);
 
-        if (
-          !scriptHtml ||
-          !scriptHtml.includes("atob")
-        ) {
-          return;
+        if (!fileMatch) {
+          continue;
         }
 
-        const regex =
-          /atob\s*\(\s*(['"])(.*?)\1\s*\)/g;
+        var rawFile = fileMatch[2] || fileMatch[1];
 
-        let match;
-
-        while (
-          (match = regex.exec(scriptHtml)) !== null
-        ) {
-          const decoded =
-            atobPolyfill(match[2]);
-
-          if (!decoded) {
-            continue;
-          }
-
-          const fileMatch =
-            decoded.match(
-              /file\s*:\s*(['"])(.*?)\1/s
-            ) ||
-            decoded.match(
-              /file\s*:\s*(\[.*?\])/s
-            );
-
-          if (!fileMatch) {
-            continue;
-          }
-
-          let rawFile =
-            fileMatch[2] ||
-            fileMatch[1];
-
-          if (!rawFile) {
-            continue;
-          }
-
+        try {
+          fileData = JSON.parse(
+            rawFile.replace(/\\(.)/g, "$1")
+          );
+        } catch (e1) {
           try {
-            fileData =
-              JSON.parse(
-                rawFile.replace(
-                  /\\(.)/g,
-                  "$1"
-                )
-              );
-          } catch (e) {
-            try {
-              fileData =
-                JSON.parse(rawFile);
-            } catch (e2) {
-              fileData = rawFile;
-            }
-          }
-
-          if (fileData) {
-            break;
+            fileData = JSON.parse(rawFile);
+          } catch (e2) {
+            fileData = rawFile;
           }
         }
+
+        if (fileData) {
+          break;
+        }
       }
+    });
+
+    return fileData;
+  } catch (e) {
+    console.log("[CinemaCity] file extraction error:", String(e));
+    return null;
+  }
+}
+
+function addStream(streams, url, title, quality) {
+  if (!url) {
+    return;
+  }
+
+  url = absoluteUrl(url);
+
+  if (
+    url.indexOf("http://") !== 0 &&
+    url.indexOf("https://") !== 0
+  ) {
+    return;
+  }
+
+  var lower = url.toLowerCase();
+
+  var flags = [];
+
+  if (
+    lower.indexOf("turkish") !== -1 ||
+    lower.indexOf("turkce") !== -1 ||
+    lower.indexOf("_tr") !== -1 ||
+    lower.indexOf("türkçe") !== -1
+  ) {
+    flags.push("🇹🇷");
+  }
+
+  if (
+    lower.indexOf("english") !== -1 ||
+    lower.indexOf("_en") !== -1
+  ) {
+    flags.push("🇺🇸");
+  }
+
+  if (lower.indexOf("german") !== -1) {
+    flags.push("🇩🇪");
+  }
+
+  if (lower.indexOf("french") !== -1) {
+    flags.push("🇫🇷");
+  }
+
+  if (lower.indexOf("russian") !== -1) {
+    flags.push("🇷🇺");
+  }
+
+  if (lower.indexOf("italian") !== -1) {
+    flags.push("🇮🇹");
+  }
+
+  if (lower.indexOf("spanish") !== -1) {
+    flags.push("🇪🇸");
+  }
+
+  if (lower.indexOf("arabic") !== -1) {
+    flags.push("🇸🇦");
+  }
+
+  if (lower.indexOf("hindi") !== -1) {
+    flags.push("🇮🇳");
+  }
+
+  var finalQuality = quality || extractQuality(url);
+
+  var language =
+    flags.length > 0
+      ? flags.join("")
+      : "Orijinal";
+
+  streams.push({
+    name: "CinemaCity [" + language + "]",
+    title: String(title || "CinemaCity") + " - " + finalQuality,
+    url: url,
+    quality: finalQuality,
+    headers: {
+      "Referer": MAIN_URL + "/",
+      "User-Agent": HEADERS["User-Agent"]
+    }
+  });
+}
+
+function processFile(streams, fileData, title) {
+  if (!fileData) {
+    return;
+  }
+
+  if (typeof fileData === "string") {
+    addStream(
+      streams,
+      fileData,
+      title,
+      extractQuality(fileData)
     );
 
-    if (!fileData) {
-      console.log(
-        "[CinemaCity] file verisi bulunamadı"
-      );
+    return;
+  }
 
-      return [];
-    }
-
-    /*
-     * 6. Stream listesi
-     */
-    const streams = [];
-
-    const langMap = [
-      {
-        key: "turkish",
-        flag: "🇹🇷"
-      },
-      {
-        key: "_tr",
-        flag: "🇹🇷"
-      },
-      {
-        key: "turkce",
-        flag: "🇹🇷"
-      },
-      {
-        key: "türkçe",
-        flag: "🇹🇷"
-      },
-      {
-        key: "english",
-        flag: "🇺🇸"
-      },
-      {
-        key: "_en",
-        flag: "🇺🇸"
-      },
-      {
-        key: "german",
-        flag: "🇩🇪"
-      },
-      {
-        key: "french",
-        flag: "🇫🇷"
-      },
-      {
-        key: "russian",
-        flag: "🇷🇺"
-      },
-      {
-        key: "italian",
-        flag: "🇮🇹"
-      },
-      {
-        key: "spanish",
-        flag: "🇪🇸"
-      },
-      {
-        key: "arabic",
-        flag: "🇸🇦"
-      },
-      {
-        key: "hindi",
-        flag: "🇮🇳"
-      }
-    ];
-
-    function addStream(
-      url,
-      title,
-      quality
-    ) {
-      if (!url) {
+  if (Array.isArray(fileData)) {
+    fileData.forEach(function (item) {
+      if (!item) {
         return;
       }
 
-      url =
-        makeAbsoluteUrl(
-          String(url).trim()
+      if (typeof item === "string") {
+        addStream(
+          streams,
+          item,
+          title,
+          extractQuality(item)
         );
 
-      if (!url) {
         return;
       }
 
-      if (
-        !url.startsWith("http://") &&
-        !url.startsWith("https://")
-      ) {
-        return;
-      }
-
-      const urlLower =
-        url.toLowerCase();
-
-      const flags = [];
-
-      langMap.forEach(
-        (item) => {
-          if (
-            urlLower.includes(
-              item.key
-            )
-          ) {
-            if (
-              !flags.includes(
-                item.flag
-              )
-            ) {
-              flags.push(
-                item.flag
-              );
-            }
-          }
-        }
-      );
-
-      const audioCount =
-        (
-          url.match(/\.m4a/gi) ||
-          []
-        ).length;
-
-      const finalQuality =
-        quality ||
-        extractQuality(url);
-
-      let infoLabel = "";
-
-      if (audioCount > 1) {
-        infoLabel =
-          "Multi: " +
-          audioCount +
-          " " +
-          flags.join("");
-      } else if (
-        flags.length > 0
-      ) {
-        infoLabel =
-          flags.join("");
-      } else {
-        infoLabel =
-          "Orijinal";
-      }
-
-      streams.push({
-        name:
-          "CinemaCity [" +
-          infoLabel +
-          "]",
-
-        title:
-          String(title || mediaTitle) +
-          " - " +
-          finalQuality,
-
-        url: url,
-
-        quality:
-          finalQuality,
-
-        headers: {
-          "User-Agent":
-            HEADERS["User-Agent"],
-          "Referer":
-            MAIN_URL + "/"
-        }
-      });
-    }
-
-    /*
-     * 7. File string işleme
-     */
-    function processStr(
-      str,
-      label
-    ) {
-      if (!str) {
-        return;
-      }
-
-      if (
-        typeof str !== "string"
-      ) {
-        return;
-      }
-
-      /*
-       * [1080p]URL,[720p]URL
-       */
-      if (
-        str.includes("[") &&
-        str.includes("]")
-      ) {
-        const parts =
-          str.split(",");
-
-        parts.forEach(
-          (part) => {
-            const trimmed =
-              part.trim();
-
-            const match =
-              trimmed.match(
-                /^\[(.*?)\](.*)$/
-              );
+      if (item.file) {
+        if (
+          typeof item.file === "string" &&
+          item.file.indexOf("[") !== -1
+        ) {
+          item.file.split(",").forEach(function (part) {
+            var match = part.match(/^\[(.*?)\](.*)$/);
 
             if (match) {
               addStream(
+                streams,
                 match[2].trim(),
-                label,
+                title,
                 match[1].trim()
               );
             } else {
               addStream(
-                trimmed,
-                label,
-                extractQuality(
-                  trimmed
-                )
+                streams,
+                part.trim(),
+                title,
+                extractQuality(part)
               );
             }
-          }
-        );
-      } else {
-        addStream(
-          str.trim(),
-          label,
-          extractQuality(str)
+          });
+        } else {
+          addStream(
+            streams,
+            item.file,
+            title,
+            extractQuality(item.file)
+          );
+        }
+      }
+    });
+  }
+}
+
+function getStreams(tmdbId, mediaType, season, episode) {
+  console.log(
+    "[CinemaCity] getStreams:",
+    tmdbId,
+    mediaType,
+    season,
+    episode
+  );
+
+  if (!tmdbId) {
+    return Promise.resolve([]);
+  }
+
+  var tmdbType =
+    mediaType === "tv" ? "tv" : "movie";
+
+  var tmdbUrl =
+    "https://api.themoviedb.org/3/" +
+    tmdbType +
+    "/" +
+    encodeURIComponent(tmdbId) +
+    "?api_key=" +
+    encodeURIComponent(TMDB_API_KEY);
+
+  return fetch(tmdbUrl)
+    .then(function (response) {
+      if (!response.ok) {
+        throw new Error(
+          "TMDB HTTP " + response.status
         );
       }
-    }
 
-    /*
-     * 8. Film
-     */
-    if (
-      mediaType === "movie"
-    ) {
-      if (
-        Array.isArray(fileData)
-      ) {
-        fileData.forEach(
-          (item) => {
-            if (
-              item &&
-              item.file
-            ) {
-              processStr(
-                item.file,
-                mediaTitle
-              );
-            }
-          }
-        );
-      } else if (
-        typeof fileData ===
-        "string"
-      ) {
-        processStr(
-          fileData,
-          mediaTitle
-        );
+      return response.json();
+    })
+    .then(function (media) {
+      var title =
+        media.title ||
+        media.name;
+
+      if (!title) {
+        return [];
       }
-    }
 
-    /*
-     * 9. Dizi
-     */
-    else {
-      if (
-        Array.isArray(fileData)
-      ) {
-        let seasonObject =
-          null;
+      console.log(
+        "[CinemaCity] TMDB title:",
+        title
+      );
 
-        fileData.some(
-          (s) => {
-            if (
-              !s ||
-              !s.title
-            ) {
-              return false;
-            }
+      var searchUrl =
+        MAIN_URL +
+        "/index.php?do=search&subaction=search&story=" +
+        encodeURIComponent(title);
 
-            const title =
-              String(
-                s.title
-              ).toLowerCase();
+      return fetch(searchUrl, {
+        headers: HEADERS
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error(
+              "CinemaCity search HTTP " +
+                response.status
+            );
+          }
 
-            const seasonNumber =
-              String(
-                season || ""
-              );
+          return response.text();
+        })
+        .then(function (html) {
+          return {
+            title: title,
+            html: html
+          };
+        });
+    })
+    .then(function (data) {
+      var mediaUrl = findMedia(
+        data.html,
+        data.title
+      );
 
-            if (
-              title.includes(
-                "season " +
-                  seasonNumber
-              ) ||
-              title.includes(
-                "s" +
-                  seasonNumber
+      if (mediaUrl) {
+        return {
+          title: data.title,
+          mediaUrl: absoluteUrl(mediaUrl)
+        };
+      }
+
+      return fetch(MAIN_URL, {
+        headers: HEADERS
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error(
+              "CinemaCity home HTTP " +
+                response.status
+            );
+          }
+
+          return response.text();
+        })
+        .then(function (homeHtml) {
+          return {
+            title: data.title,
+            mediaUrl: absoluteUrl(
+              findMedia(
+                homeHtml,
+                data.title
               )
-            ) {
-              seasonObject =
-                s;
+            )
+          };
+        });
+    })
+    .then(function (data) {
+      if (!data.mediaUrl) {
+        console.log(
+          "[CinemaCity] Film bulunamadı:",
+          data.title
+        );
 
-              return true;
-            }
+        return [];
+      }
 
+      return fetch(data.mediaUrl, {
+        headers: HEADERS
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error(
+              "CinemaCity page HTTP " +
+                response.status
+            );
+          }
+
+          return response.text();
+        })
+        .then(function (pageHtml) {
+          return {
+            title: data.title,
+            pageHtml: pageHtml
+          };
+        });
+    })
+    .then(function (data) {
+      if (!data.pageHtml) {
+        return [];
+      }
+
+      var fileData =
+        extractFileData(
+          data.pageHtml
+        );
+
+      if (!fileData) {
+        console.log(
+          "[CinemaCity] Stream verisi bulunamadı"
+        );
+
+        return [];
+      }
+
+      var streams = [];
+
+      /*
+       * FILM
+       */
+      if (mediaType === "movie") {
+        processFile(
+          streams,
+          fileData,
+          data.title
+        );
+
+        return streams;
+      }
+
+      /*
+       * DIZI
+       */
+      if (mediaType === "tv" && Array.isArray(fileData)) {
+        var selectedSeason = null;
+
+        fileData.some(function (s) {
+          if (!s || !s.title) {
             return false;
           }
-        );
+
+          var stitle =
+            String(s.title).toLowerCase();
+
+          var sn =
+            String(season || "");
+
+          if (
+            stitle.indexOf(
+              "season " + sn
+            ) !== -1 ||
+            stitle.indexOf(
+              "s" + sn
+            ) !== -1
+          ) {
+            selectedSeason = s;
+            return true;
+          }
+
+          return false;
+        });
 
         if (
-          seasonObject &&
+          selectedSeason &&
           Array.isArray(
-            seasonObject.folder
+            selectedSeason.folder
           )
         ) {
-          let episodeObject =
-            null;
+          var selectedEpisode = null;
 
-          seasonObject.folder.some(
-            (e) => {
-              if (
-                !e ||
-                !e.title
-              ) {
+          selectedSeason.folder.some(
+            function (e) {
+              if (!e || !e.title) {
                 return false;
               }
 
-              const title =
+              var etitle =
                 String(
                   e.title
                 ).toLowerCase();
 
-              const episodeNumber =
-                String(
-                  episode || ""
-                );
+              var en =
+                String(episode || "");
 
               if (
-                title.includes(
-                  "episode " +
-                    episodeNumber
-                ) ||
-                title.includes(
-                  "e" +
-                    episodeNumber
-                )
+                etitle.indexOf(
+                  "episode " + en
+                ) !== -1 ||
+                etitle.indexOf(
+                  "e" + en
+                ) !== -1
               ) {
-                episodeObject =
-                  e;
-
+                selectedEpisode = e;
                 return true;
               }
 
@@ -879,12 +603,13 @@ async function getStreams(
           );
 
           if (
-            episodeObject &&
-            episodeObject.file
+            selectedEpisode &&
+            selectedEpisode.file
           ) {
-            processStr(
-              episodeObject.file,
-              mediaTitle +
+            processFile(
+              streams,
+              selectedEpisode.file,
+              data.title +
                 " S" +
                 season +
                 "E" +
@@ -892,29 +617,24 @@ async function getStreams(
             );
           }
         }
+
+        return streams;
       }
-    }
 
-    console.log(
-      "[CinemaCity] Streams:",
-      streams.length
-    );
+      return [];
+    })
+    .catch(function (error) {
+      console.log(
+        "[CinemaCity] ERROR:",
+        error && error.message
+          ? error.message
+          : String(error)
+      );
 
-    return streams;
-
-  } catch (error) {
-    console.log(
-      "[CinemaCity] ERROR:",
-      error &&
-      error.message
-        ? error.message
-        : String(error)
-    );
-
-    return [];
-  }
+      return [];
+    });
 }
 
 module.exports = {
-  getStreams
+  getStreams: getStreams
 };
