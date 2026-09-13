@@ -197,6 +197,18 @@
       "contentLanguage": ["tr"]
     },
     {
+  "id": "testprovider",
+  "name": "MoOnCrOwN TEST",
+  "description": "Nuvio test provider",
+  "version": "1.0.0",
+  "author": "MoOnCrOwN",
+  "supportedTypes": ["movie", "tv"],
+  "filename": "providers/testprovider.js",
+  "enabled": true,
+  "formats": ["m3u8"],
+  "contentLanguage": ["en"]
+},
+    {
       "id": "cinemacity",
       "name": "CinemaCity",
       "description": "Multi Language Provider",
